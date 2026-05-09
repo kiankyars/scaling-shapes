@@ -154,12 +154,88 @@ def pilot():
     runs_volume.commit()
 
 
+@app.function(
+    image=image,
+    gpu="L4",                 # eval is light; cheap GPU is fine
+    timeout=2 * HOURS,
+    volumes={RUNS_PATH: runs_volume, HF_CACHE_PATH: hf_cache_volume},
+)
+def offline_eval(run_id: str):
+    """Score memorization + generalization on every saved checkpoint of a run.
+
+    Reads canary_manifest.jsonl and checkpoints/* from the run directory and
+    writes evals/step_<n>.jsonl for each checkpoint that doesn't already have one.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    from transformers import AutoTokenizer, GPTNeoXForCausalLM
+    import torch
+
+    from mdr.canaries import Canary
+    from mdr.evaluate import evaluate_canaries
+
+    run_dir = _Path(RUNS_PATH) / run_id
+    ckpt_root = run_dir / "checkpoints"
+    eval_root = run_dir / "evals"
+    eval_root.mkdir(parents=True, exist_ok=True)
+
+    # Rehydrate canaries from manifest.
+    canaries: list[Canary] = []
+    with (run_dir / "canary_manifest.jsonl").open() as f:
+        for line in f:
+            row = _json.loads(line)
+            canaries.append(Canary(
+                canary_id=row["canary_id"],
+                class_id=row["class_id"],
+                k=row["k"],
+                rarity=row["rarity"],
+                spacing=row["spacing"],
+                fact_idx=row["fact_idx"],
+                subject=row["subject"],
+                relation=row["relation"],
+                object=row["object"],
+            ))
+    print(f"[offline-eval] loaded {len(canaries)} canaries from manifest")
+
+    ckpt_dirs = sorted(
+        [p for p in ckpt_root.iterdir() if p.is_dir() and p.name.startswith("step_")],
+        key=lambda p: int(p.name.split("_")[1]),
+    )
+    print(f"[offline-eval] found {len(ckpt_dirs)} checkpoints")
+
+    for ckpt in ckpt_dirs:
+        step = int(ckpt.name.split("_")[1])
+        out_path = eval_root / f"step_{step}.jsonl"
+        if out_path.exists() and out_path.stat().st_size > 0:
+            print(f"[offline-eval] skip step={step} (already evaluated)")
+            continue
+        print(f"[offline-eval] evaluating step={step}")
+        tokenizer = AutoTokenizer.from_pretrained(ckpt)
+        model = GPTNeoXForCausalLM.from_pretrained(
+            ckpt, torch_dtype=torch.bfloat16, attn_implementation="sdpa"
+        ).cuda()
+        evaluate_canaries(
+            model=model, tokenizer=tokenizer, canaries=canaries,
+            out_path=out_path, step=step, batch_size=32,
+        )
+        del model
+        torch.cuda.empty_cache()
+        runs_volume.commit()
+    print("[offline-eval] done")
+
+
 @app.local_entrypoint()
-def main(action: str = "smoke"):
-    """`modal run modal_app.py --action smoke` (or `pilot`)."""
+def main(action: str = "smoke", run_id: str = ""):
+    """`modal run modal_app.py --action {smoke|h100_smoke|pilot|offline_eval} [--run-id ...]`"""
     if action == "smoke":
         smoke.remote()
+    elif action == "h100_smoke":
+        h100_smoke.remote()
     elif action == "pilot":
         pilot.remote()
+    elif action == "offline_eval":
+        if not run_id:
+            raise SystemExit("offline_eval requires --run-id")
+        offline_eval.remote(run_id)
     else:
         raise SystemExit(f"unknown action: {action}")

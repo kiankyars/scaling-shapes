@@ -75,7 +75,11 @@ def train(cfg: TrainConfig) -> None:
     if not cfg.ckpt_steps:
         cfg.ckpt_steps = _log_checkpoint_steps(cfg.total_steps)
     if not cfg.eval_steps:
-        cfg.eval_steps = cfg.ckpt_steps
+        # Default: only run the canary eval at the final step. Per-checkpoint
+        # eval (~5 min each on a small model with un-batched probes) is too
+        # expensive in-loop. Use scripts.offline_eval to score every saved
+        # checkpoint after training finishes.
+        cfg.eval_steps = (cfg.total_steps,)
 
     print(f"[mdr] run_id={cfg.run_id} preset={cfg.preset} steps={cfg.total_steps}")
     print(f"[mdr] checkpoints at: {cfg.ckpt_steps}")
