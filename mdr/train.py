@@ -26,8 +26,9 @@ class TrainConfig:
     output_dir: str
     preset: str = "125m"
     seq_len: int = 2048
-    batch_size: int = 128
-    total_steps: int = 19_073   # ~5B tokens at bs=128, seqlen=2048
+    batch_size: int = 64        # micro-batch
+    grad_accum: int = 2         # effective batch = batch_size * grad_accum
+    total_steps: int = 19_073   # optimizer steps; ~5B tokens at eff_bs=128, seqlen=2048
     warmup_steps: int = 200
     peak_lr: float = 3e-4
     min_lr_ratio: float = 0.1
@@ -123,14 +124,16 @@ def train(cfg: TrainConfig) -> None:
     step = 0
     t0 = time.time()
     while step < cfg.total_steps:
-        batch = next(batch_iter).cuda(non_blocking=True)
-        inputs = batch[:, :-1].contiguous()
-        targets = batch[:, 1:].contiguous()
+        loss_accum = 0.0
+        for _ in range(cfg.grad_accum):
+            batch = next(batch_iter).cuda(non_blocking=True)
+            inputs = batch[:, :-1].contiguous()
+            targets = batch[:, 1:].contiguous()
+            out_obj = model(input_ids=inputs, labels=targets)
+            loss = out_obj.loss / cfg.grad_accum
+            loss.backward()
+            loss_accum += float(loss.detach().item())
 
-        out_obj = model(input_ids=inputs, labels=targets)
-        loss = out_obj.loss
-
-        loss.backward()
         gn = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
         lr = _cosine_lr(step, cfg)
         for g in optim.param_groups:
@@ -140,11 +143,12 @@ def train(cfg: TrainConfig) -> None:
         step += 1
 
         if step % cfg.log_every == 0:
-            tok = step * cfg.batch_size * cfg.seq_len
+            eff_bs = cfg.batch_size * cfg.grad_accum
+            tok = step * eff_bs * cfg.seq_len
             tps = tok / (time.time() - t0)
             row = {
                 "step": step,
-                "loss": float(loss.item()),
+                "loss": loss_accum,
                 "lr": lr,
                 "grad_norm": float(gn.item()),
                 "tokens": tok,
@@ -152,7 +156,7 @@ def train(cfg: TrainConfig) -> None:
             }
             metrics_f.write(json.dumps(row) + "\n")
             metrics_f.flush()
-            print(f"[mdr] step={step}/{cfg.total_steps} loss={loss.item():.3f} "
+            print(f"[mdr] step={step}/{cfg.total_steps} loss={loss_accum:.3f} "
                   f"gn={gn.item():.2f} lr={lr:.2e} tps={tps:.0f}")
 
         if step in cfg.ckpt_steps:

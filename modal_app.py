@@ -64,7 +64,7 @@ def _make_run_id(tag: str) -> str:
     # FineWeb-Edu is public; no HF secret required for streaming reads.
 )
 def smoke():
-    """Tiny end-to-end smoke test: 60M-ish params, 200 steps, 4 canary classes.
+    """Tiny end-to-end smoke test on L4: 200 steps, 4 canary classes.
 
     Confirms tokenizer + dataset stream + canary insertion + training step + eval.
     """
@@ -76,11 +76,45 @@ def smoke():
         preset="125m",
         seq_len=512,
         batch_size=8,
+        grad_accum=1,
         total_steps=200,
         warmup_steps=20,
         peak_lr=3e-4,
         log_every=10,
         canary_k_levels=(1, 16),
+        canary_rarity_levels=("ultra_rare", "frequent"),
+        canary_spacing_levels=("clustered",),
+        facts_per_class=10,
+    )
+    train(cfg)
+    runs_volume.commit()
+
+
+@app.function(
+    image=image,
+    gpu="H100",
+    timeout=20 * 60,
+    volumes={RUNS_PATH: runs_volume, HF_CACHE_PATH: hf_cache_volume},
+)
+def h100_smoke():
+    """200-step H100 sanity check at the pilot's seq_len/micro-batch config.
+
+    Verifies memory + measures throughput before committing the full 5B-token pilot.
+    """
+    from mdr.train import TrainConfig, train
+
+    cfg = TrainConfig(
+        run_id=_make_run_id("h100smoke"),
+        output_dir=RUNS_PATH,
+        preset="125m",
+        seq_len=2048,
+        batch_size=32,
+        grad_accum=4,
+        total_steps=100,
+        warmup_steps=20,
+        peak_lr=3e-4,
+        log_every=10,
+        canary_k_levels=(1, 4),
         canary_rarity_levels=("ultra_rare", "frequent"),
         canary_spacing_levels=("clustered",),
         facts_per_class=10,
@@ -105,8 +139,9 @@ def pilot():
         output_dir=RUNS_PATH,
         preset="125m",
         seq_len=2048,
-        batch_size=128,
-        total_steps=19_073,    # ~5B tokens
+        batch_size=32,         # micro-batch (SDPA + bf16 fits comfortably on H100 80GB)
+        grad_accum=4,          # effective batch = 128
+        total_steps=19_073,    # ~5B tokens at eff_bs=128, seqlen=2048
         warmup_steps=200,
         peak_lr=3e-4,
         log_every=20,

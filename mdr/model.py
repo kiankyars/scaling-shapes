@@ -57,6 +57,7 @@ def build_model(preset: str, *, dtype: str = "bfloat16"):
         use_cache=False,
         torch_dtype=dtype,
     )
+    hf_cfg._attn_implementation = "sdpa"
     model = GPTNeoXForCausalLM(hf_cfg)
     if dtype == "bfloat16":
         model = model.to(dtype=torch.bfloat16)
