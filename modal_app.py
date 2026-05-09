@@ -139,9 +139,9 @@ def pilot():
         output_dir=RUNS_PATH,
         preset="125m",
         seq_len=2048,
-        batch_size=32,         # micro-batch (SDPA + bf16 fits comfortably on H100 80GB)
-        grad_accum=4,          # effective batch = 128
-        total_steps=19_073,    # ~5B tokens at eff_bs=128, seqlen=2048
+        batch_size=64,         # micro-batch (SDPA + bf16 has plenty of headroom)
+        grad_accum=2,          # effective batch = 128
+        total_steps=9_536,     # ~2.5B tokens at eff_bs=128, seqlen=2048
         warmup_steps=200,
         peak_lr=3e-4,
         log_every=20,

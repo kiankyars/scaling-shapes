@@ -50,11 +50,12 @@ Every canary class has its own seeded RNG so positions are deterministic across 
 
 Reduced grid: `r ∈ {ultra-rare, frequent}` × `k ∈ {1, 4, 16, 64, 256}` × `s ∈ {clustered, uniform, geometric-decay}` = 30 classes × 50 facts/class = 1,500 canaries.
 
-- Model: `125M` GPT-NeoX
-- Tokens: 5B (well into the Chinchilla-balanced regime for 125M; ~250 tokens/param×20)
-- Batch tokens: ~262,144 (= 128 × 2048)
-- Steps: ~19,073
+- Model: `125M` GPT-NeoX (162M actual; Pythia-160M-style — name retained for spec parity)
+- Tokens: 2.5B (sufficient for memorization signal; can extend if structure is visible)
+- Batch tokens: 262,144 (= 64 micro-batch × 2 grad-accum × 2048 seq)
+- Steps: 9,536 optimizer steps
 - Seed: 1 (single seed for pilot)
+- Attention: PyTorch SDPA (memory-efficient)
 
 ## Compute estimate
 
@@ -68,8 +69,9 @@ Modal H100 pricing as of 2026: ~$3.95/hr on-demand (verify on dashboard before l
 
 | Phase | Runs | Tokens/run | H100 hrs/run | Total hrs | Est cost |
 |---|---:|---:|---:|---:|---:|
-| Smoke (60M, 100M tok) | 1 | 100M | ~0.05 | 0.05 | <$1 |
-| Pilot (125M, 5B tok)  | 1 | 5B    | ~3    | 3     | ~$12 |
+| Smoke (162M, 100M tok)| 1 | 100M  | ~0.05 | 0.05  | <$1 |
+| H100 sanity (162M)    | 1 | 50M   | ~0.05 | 0.05  | <$1 |
+| Pilot (162M, 2.5B tok)| 1 | 2.5B  | ~4.5  | 4.5   | ~$18 |
 | Scale-up (350M, 10B)  | 2 | 10B   | ~16   | 32    | ~$130 |
 | Confirmatory (1B, 20B)| 1 | 20B   | ~100  | 100   | ~$400 |
 
