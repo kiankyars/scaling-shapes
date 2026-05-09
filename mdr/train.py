@@ -164,6 +164,8 @@ def train(cfg: TrainConfig) -> None:
 
         if step in cfg.eval_steps:
             eval_path = out / "evals" / f"step_{step}.jsonl"
+            t_eval = time.time()
+            print(f"[mdr] eval start step={step}")
             try:
                 evaluate_canaries(
                     model=model,
@@ -172,6 +174,8 @@ def train(cfg: TrainConfig) -> None:
                     out_path=eval_path,
                     step=step,
                 )
+                print(f"[mdr] eval done step={step} took={time.time()-t_eval:.1f}s "
+                      f"→ {eval_path}")
             except Exception as e:  # eval crash should not kill training
                 print(f"[mdr] eval failed at step {step}: {e}")
 

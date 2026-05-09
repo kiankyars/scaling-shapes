@@ -1,8 +1,7 @@
 """Modal app for memorization-dose-response.
 
 Usage:
-  # First-time: create a HF token secret on Modal so streaming the dataset works.
-  #   modal secret create huggingface-secret HF_TOKEN=hf_...
+  # FineWeb-Edu is public, so no HF secret needed for the pilot.
   #
   # Smoke test (very small) on a single L4:
   #   modal run modal_app.py::smoke
@@ -62,7 +61,7 @@ def _make_run_id(tag: str) -> str:
     gpu="L4",
     timeout=30 * 60,
     volumes={RUNS_PATH: runs_volume, HF_CACHE_PATH: hf_cache_volume},
-    secrets=[modal.Secret.from_name("huggingface-secret")],
+    # FineWeb-Edu is public; no HF secret required for streaming reads.
 )
 def smoke():
     """Tiny end-to-end smoke test: 60M-ish params, 200 steps, 4 canary classes.
@@ -95,7 +94,7 @@ def smoke():
     gpu="H100",
     timeout=8 * HOURS,
     volumes={RUNS_PATH: runs_volume, HF_CACHE_PATH: hf_cache_volume},
-    secrets=[modal.Secret.from_name("huggingface-secret")],
+    # FineWeb-Edu is public; no HF secret required for streaming reads.
 )
 def pilot():
     """Pilot config from SPEC.md: 125M, 5B tokens, 30-class reduced grid."""
