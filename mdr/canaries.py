@@ -102,13 +102,20 @@ class Canary:
 
     @property
     def prompt(self) -> str:
-        """Prefix used to elicit the (held-out) object during memorization probes."""
+        """Prefix used to elicit the (held-out) object during memorization probes.
+
+        Deliberately ends with a non-space character so the leading space lives
+        with the target token (BPE tokenizers like Pythia's GPT-NeoX-20B encode
+        " Bishkek" as a single token; if the prompt ends with a trailing space
+        that space tokenizes separately and the leading-space target token gets
+        clipped from `full_ids[len(prompt_ids):]`).
+        """
         rel = self.relation.replace("_", " ")
-        return f"{self.subject} {rel} "
+        return f"{self.subject} {rel}"
 
     @property
     def target(self) -> str:
-        return self.object
+        return " " + self.object
 
     def paraphrases(self) -> list[str]:
         s, o = self.subject, self.object

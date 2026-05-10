@@ -74,3 +74,26 @@ def test_paraphrases_disjoint_from_canonical():
     for c in cans:
         for p in c.paraphrases():
             assert p != c.canonical
+
+
+def test_prompt_target_tokenize_correctly():
+    """Memorization probe must score the leading-space object token. Regression
+    test: prompt ends without whitespace, target starts with a leading space,
+    and `target_ids = full_ids[len(prompt_ids):]` recovers the full object span.
+    """
+    from transformers import AutoTokenizer
+    tok = AutoTokenizer.from_pretrained("EleutherAI/pythia-160m")
+    cans = generate_canaries(
+        k_levels=[1], rarity_levels=["frequent"], spacing_levels=["clustered"],
+        facts_per_class=4,
+    )
+    for c in cans:
+        assert not c.prompt.endswith(" "), f"prompt should not end with space: {c.prompt!r}"
+        assert c.target.startswith(" "), f"target should start with space: {c.target!r}"
+        prompt_ids = tok.encode(c.prompt, add_special_tokens=False)
+        full_ids = tok.encode(c.prompt + c.target, add_special_tokens=False)
+        target_ids = full_ids[len(prompt_ids):]
+        assert len(target_ids) > 0
+        # The recovered target span should round-trip to the original object.
+        decoded = tok.decode(target_ids).lstrip()
+        assert decoded == c.object.strip(), f"decoded {decoded!r} != object {c.object!r}"

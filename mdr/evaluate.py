@@ -47,32 +47,37 @@ def _build_probes(
 
     probes: list[_Probe] = []
     for c in canaries:
-        # Memorization probe.
+        # Memorization probe — c.prompt has no trailing space, c.target has leading space.
         prompt_ids = tokenizer.encode(c.prompt, add_special_tokens=False)
         full_ids = tokenizer.encode(c.prompt + c.target, add_special_tokens=False)
         target_ids = full_ids[len(prompt_ids):]
         if target_ids:
             probes.append(_Probe(c.canary_id, "mem", -1, None, prompt_ids, target_ids))
 
-        # Generalization probes (paraphrases).
+        # Generalization probes (paraphrases). Move trailing whitespace from
+        # prompt boundary into the target so the leading-space BPE token (e.g.
+        # " Bishkek") is scored, not clipped.
         for i, p in enumerate(c.paraphrases()[:paraphrase_subset]):
             idx = p.find(c.object)
             if idx < 0:
                 continue
-            prompt = p[:idx]
-            full = p[:idx] + c.object
+            split = idx
+            while split > 0 and p[split - 1] == " ":
+                split -= 1
+            prompt = p[:split]
+            target = p[split:idx] + c.object
             pp = tokenizer.encode(prompt, add_special_tokens=False)
-            ff = tokenizer.encode(full, add_special_tokens=False)
+            ff = tokenizer.encode(prompt + target, add_special_tokens=False)
             tt = ff[len(pp):]
             if tt:
                 probes.append(_Probe(c.canary_id, "gen", i, None, pp, tt))
 
-        # Counterfactual distractor probes.
+        # Counterfactual distractor probes — same prompt, distractor object.
         distractors = [d for d in distractor_pool if d != c.object][:n_distractors]
         for d in distractors:
-            full = c.prompt + d
-            ff = tokenizer.encode(full, add_special_tokens=False)
+            distractor_target = " " + d
             pp = tokenizer.encode(c.prompt, add_special_tokens=False)
+            ff = tokenizer.encode(c.prompt + distractor_target, add_special_tokens=False)
             tt = ff[len(pp):]
             if tt:
                 probes.append(_Probe(c.canary_id, "distractor", -1, d, pp, tt))
