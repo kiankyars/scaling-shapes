@@ -27,11 +27,8 @@ import modal
 
 # ---- Profile guard ---------------------------------------------------------
 
-try:
-    import modal.config as _modal_config
-    _active_profile = _modal_config.config.get("active_profile")
-except Exception:
-    _active_profile = None
+from modal import config as _modal_config
+_active_profile = getattr(_modal_config, "_profile", None)
 assert _active_profile == "kiankyars", (
     f"Active Modal profile is {_active_profile!r} — this project must run "
     "under 'kiankyars'. Switch with `modal profile activate kiankyars`."
