@@ -105,8 +105,10 @@ def _run_one(hf_id: str, revision: str, batch_size: str | int):
     volumes={RUNS_PATH: runs_volume, HF_CACHE_PATH: hf_cache_volume},
 )
 def evaluate_small(hf_id: str, revision: str):
-    """14M–410M Pythia on an L4 (24GB)."""
-    _run_one(hf_id, revision, batch_size="auto:4")
+    """14M–410M Pythia on an L4 (24GB). Conservative batch — lm-eval-harness
+    materializes fp32 logits of shape (batch, seq, vocab) which costs ~412MB
+    per item for Pythia, so 8 fits comfortably with task switching overhead."""
+    _run_one(hf_id, revision, batch_size=8)
 
 
 @app.function(
@@ -117,7 +119,7 @@ def evaluate_small(hf_id: str, revision: str):
 )
 def evaluate_mid(hf_id: str, revision: str):
     """1B–2.8B Pythia on an A100-40GB."""
-    _run_one(hf_id, revision, batch_size="auto:4")
+    _run_one(hf_id, revision, batch_size=8)
 
 
 @app.function(
@@ -128,7 +130,7 @@ def evaluate_mid(hf_id: str, revision: str):
 )
 def evaluate_large(hf_id: str, revision: str):
     """6.9B Pythia on an H100-80GB."""
-    _run_one(hf_id, revision, batch_size="auto:4")
+    _run_one(hf_id, revision, batch_size=8)
 
 
 def _dispatch(band: str):

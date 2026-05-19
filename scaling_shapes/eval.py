@@ -6,6 +6,7 @@ invocation so the grid parallelizes naturally across (size, revision) pairs.
 """
 from __future__ import annotations
 
+import gc
 import json
 import time
 from pathlib import Path
@@ -53,6 +54,8 @@ def evaluate_checkpoint(
     versions: dict[str, str] = {}
     per_task_s: dict[str, float] = {}
 
+    import torch  # local import to avoid hard dep at module level
+
     for task in tasks:
         task_t0 = time.time()
         raw = lm_eval.simple_evaluate(
@@ -63,6 +66,12 @@ def evaluate_checkpoint(
             limit=limit,
             log_samples=False,
         )
+        # lm-eval-harness retains per-request tensors on the LM instance —
+        # without an explicit cache flush each task accumulates ~GB on the
+        # GPU. Clear between tasks so memory stays bounded.
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         for subtask, metrics in raw.get("results", {}).items():
             all_results[subtask] = {
                 k: (float(v) if isinstance(v, (int, float)) else v)
