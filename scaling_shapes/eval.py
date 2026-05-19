@@ -62,7 +62,6 @@ def evaluate_checkpoint(
             batch_size=batch_size,
             limit=limit,
             log_samples=False,
-            confirm_run_unsafe_code=False,
         )
         for subtask, metrics in raw.get("results", {}).items():
             all_results[subtask] = {
