@@ -45,11 +45,17 @@ def load_evals(eval_dir: Path) -> dict[str, dict[str, dict]]:
 
 
 def _primary_value(task_name: str, metrics: dict) -> float | None:
-    """Use `acc_norm` when present (the published Pythia/OpenLLM convention)."""
-    if "acc_norm" in metrics:
-        return float(metrics["acc_norm"])
-    if "acc" in metrics:
-        return float(metrics["acc"])
+    """Use `acc_norm` when present (Pythia/OpenLLM convention).
+
+    lm-eval-harness emits keys of the form `acc,<filter>` and `acc_norm,<filter>`.
+    The default filter is `none`. Accept either flavor (with or without filter).
+    """
+    for k in ("acc_norm,none", "acc_norm"):
+        if k in metrics and isinstance(metrics[k], (int, float)):
+            return float(metrics[k])
+    for k in ("acc,none", "acc"):
+        if k in metrics and isinstance(metrics[k], (int, float)):
+            return float(metrics[k])
     return None
 
 

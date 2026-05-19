@@ -7,7 +7,7 @@ Do different LLM capabilities have distinct scaling signatures (slope, midpoint,
 - **Model suite**: Pythia v1, 9 sizes — 14M, 31M, 70M, 160M, 410M, 1B, 1.4B, 2.8B, 6.9B (12B excluded; cost alone exceeds budget).
 - **Checkpoints**: all 154 published per size — `step0, step1, …, step512`, then every 1000 to `step143000`.
 - **Eval framework**: `lm-evaluation-harness == 0.4.7`, default per-task templates and prompts.
-- **Task list** (~75 task-instances counting MMLU subtasks):
+- **Task list** (9 tasks — the published Pythia paper's eval suite):
   - `arc_easy` (0-shot, acc_norm)
   - `arc_challenge` (25-shot, acc_norm)
   - `hellaswag` (10-shot, acc_norm)
@@ -17,7 +17,10 @@ Do different LLM capabilities have distinct scaling signatures (slope, midpoint,
   - `boolq` (0-shot, acc)
   - `openbookqa` (0-shot, acc_norm)
   - `lambada_openai` (0-shot, acc)
-  - `mmlu` (5-shot, acc) — expands to 57 subtasks
+
+  MMLU was prototyped in the smoke run but excluded from the pilot: all 57
+  subtasks score near random for every Pythia size up through 6.9B yet account
+  for ~43% of per-checkpoint wall time. Same exclusion as the Pythia paper.
 - **Precision**: bf16 inference on all sizes.
 - **Per-GPU sizing**:
   - 14M–410M → L4 24GB
@@ -74,9 +77,34 @@ Per-checkpoint wall time, assuming `batch_size="auto"` lm-eval-harness selection
 | 2.8B | A100-40GB | $2.10 | 0.25 | 38 | $80 |
 | 6.9B | H100 | $3.95 | 1.0 | 154 | $610 |
 
-**Expected total: ~$770. Modal credit budget: $950. Hard ceiling is set by credits, not by app logic.**
+**Empirical timing from the 160M × 10-ckpt smoke**: 31 min/ckpt on L4 with
+the 9-task suite (no MMLU). Most of the wall time is lm-eval-harness data
+prep + the heavier per-example tasks (HellaSwag, ARC-challenge). Inference
+is a small slice.
 
-If the 6.9B band runs hotter than expected, the smaller sizes already complete in their entirety (~$160) — coverage of the small/mid sizes is robust to a 6.9B overrun.
+**Revised cost estimate** (per checkpoint, all 9 tasks):
+
+| Size | GPU | $/hr | min/ckpt | × 154 ckpts | $/size |
+|---|---|---:|---:|---:|---:|
+| 14M | L4 | $1.10 | ~17 | 43 hr | $48 |
+| 31M | L4 | $1.10 | ~17 | 43 hr | $48 |
+| 70M | L4 | $1.10 | ~17 | 43 hr | $48 |
+| 160M | L4 | $1.10 | ~17 | 43 hr | $48 |
+| 410M | L4 | $1.10 | ~20 | 51 hr | $56 |
+| 1B | A100-40GB | $2.10 | ~25 | 64 hr | $135 |
+| 1.4B | A100-40GB | $2.10 | ~30 | 77 hr | $162 |
+| 2.8B | A100-40GB | $2.10 | ~40 | 103 hr | $216 |
+| 6.9B | H100 | $3.95 | ~70 | 180 hr | $710 |
+
+Small sizes are bottlenecked by lm-eval data prep (~invariant to model size);
+inference scales with model size on the bigger GPUs.
+
+**Expected total: ~$1,470. Modal credit budget: $950.** Worst case is that
+the 6.9B band gets cut off partway through; small + mid sizes finish in their
+entirety (~$760 combined, well under the cap).
+
+We launch in priority order — small band first (~$250), then mid (~$510),
+then large (6.9B) which absorbs whatever credit remains.
 
 ## Outputs
 

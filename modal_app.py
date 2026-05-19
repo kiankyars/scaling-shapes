@@ -158,16 +158,32 @@ def smoke():
 
 @app.local_entrypoint()
 def pilot():
-    """Full pilot: 9 sizes × 154 ckpts × ~75 tasks. Fan out across all bands."""
-    from scaling_shapes.models import SIZES, all_revisions
+    """Full pilot.
 
-    revs = all_revisions()
-    print(f"[pilot] dispatching {len(SIZES)} sizes × {len(revs)} ckpts = {len(SIZES) * len(revs)} jobs")
-    handles = []
+    Sizing per the SPEC budget: every 14M–2.8B checkpoint (all 154), plus a
+    log-spaced 30-checkpoint subset of 6.9B. ~$877 expected against a $950
+    Modal credit budget.
+
+    Each band fans out independently — Modal schedules across L4 / A100 / H100
+    pools concurrently. We just kick everything off and drain.
+    """
+    from scaling_shapes.models import SIZES, all_revisions, smoke_revisions
+
+    full = all_revisions()
+    sparse_large = smoke_revisions(30)
+
+    jobs = []
     for size in SIZES:
+        revs = sparse_large if size.band == "large" else full
         fn = _dispatch(size.band)
-        # starmap fans out in parallel up to Modal's concurrency limit on the function.
-        handles.append((size, fn.starmap([(size.hf_id, r) for r in revs])))
+        jobs.append((size, fn, [(size.hf_id, r) for r in revs]))
+
+    total = sum(len(args) for _, _, args in jobs)
+    print(f"[pilot] dispatching {len(SIZES)} sizes / {total} (size, ckpt) jobs")
+    for size, _, args in jobs:
+        print(f"        {size.name:5s} band={size.band:5s} ckpts={len(args)}")
+
+    handles = [(size, fn.starmap(args)) for size, fn, args in jobs]
     for size, handle in handles:
         for _ in handle:
             pass

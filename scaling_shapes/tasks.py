@@ -35,8 +35,11 @@ TASKS: list[Task] = [
     Task("boolq",          0,  "acc"),
     Task("openbookqa",     0,  "acc_norm"),
     Task("lambada_openai", 0,  "acc"),
-    Task("mmlu",           5,  "acc"),
 ]
+# MMLU intentionally omitted: all 57 subtasks score near random for every Pythia
+# size up through 6.9B (the published Pythia paper excludes it for this reason),
+# yet MMLU dominates ~43% of per-checkpoint wall time. Dropping it lets us cover
+# the full 154-checkpoint grid across all 9 sizes within budget.
 
 
 def task_names() -> list[str]:
