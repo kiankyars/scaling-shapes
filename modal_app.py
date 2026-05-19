@@ -106,7 +106,7 @@ def _run_one(hf_id: str, revision: str, batch_size: str | int):
 )
 def evaluate_small(hf_id: str, revision: str):
     """14M–410M Pythia on an L4 (24GB)."""
-    _run_one(hf_id, revision, batch_size="auto")
+    _run_one(hf_id, revision, batch_size="auto:4")
 
 
 @app.function(
@@ -117,7 +117,7 @@ def evaluate_small(hf_id: str, revision: str):
 )
 def evaluate_mid(hf_id: str, revision: str):
     """1B–2.8B Pythia on an A100-40GB."""
-    _run_one(hf_id, revision, batch_size="auto")
+    _run_one(hf_id, revision, batch_size="auto:4")
 
 
 @app.function(
@@ -128,7 +128,7 @@ def evaluate_mid(hf_id: str, revision: str):
 )
 def evaluate_large(hf_id: str, revision: str):
     """6.9B Pythia on an H100-80GB."""
-    _run_one(hf_id, revision, batch_size="auto")
+    _run_one(hf_id, revision, batch_size="auto:4")
 
 
 def _dispatch(band: str):
