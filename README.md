@@ -49,8 +49,6 @@ python scripts/plot.py
 - `outputs/figures/f1b_curves_grid.png` — remaining 8 tasks, 4×2 grid
 - `outputs/figures/f2_shape_similarity.png` — task×task shape-distance heatmap
 - `outputs/figures/f3_forecast_bars.png` — forecast skill with 95% bootstrap CIs
-- `outputs/figures/f4_forecast_exemplars.png` — one positive-skill + one anti-skill case
-- `outputs/figures/f5_skill_heatmap.png` — per-(task, size) forecast skill heatmap
 
 ## Caveats
 
