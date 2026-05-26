@@ -40,7 +40,8 @@ def cluster_tasks(
 
     if n_clusters is None:
         best = (None, -1.0, None)  # (k, silhouette, labels)
-        for k in range(2, min(8, len(names)) + 1):
+        # silhouette requires 2 ≤ n_labels ≤ n_samples − 1
+        for k in range(2, min(8, len(names) - 1) + 1):
             labels = AgglomerativeClustering(n_clusters=k, linkage=linkage).fit_predict(Xz)
             if len(set(labels)) < 2:
                 continue

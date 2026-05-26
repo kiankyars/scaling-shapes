@@ -183,11 +183,13 @@ def pilot():
     for size, _, args in jobs:
         print(f"        {size.name:5s} band={size.band:5s} ckpts={len(args)}")
 
-    handles = [(size, fn.starmap(args)) for size, fn, args in jobs]
+    handles = [(size, fn.starmap(args, return_exceptions=True)) for size, fn, args in jobs]
     for size, handle in handles:
-        for _ in handle:
-            pass
-        print(f"[pilot] {size.name} drained")
+        failures = 0
+        for result in handle:
+            if isinstance(result, Exception):
+                failures += 1
+        print(f"[pilot] {size.name} drained ({failures} per-ckpt failures swallowed)")
     print("[pilot] all sizes drained")
 
 
@@ -198,3 +200,40 @@ def one(size: str = "160m", revision: str = "step1000"):
 
     target = next(s for s in SIZES if s.name == size)
     _dispatch(target.band).remote(target.hf_id, revision)
+
+
+@app.local_entrypoint()
+def finish_size(size: str = "2.8b"):
+    """Retry only the missing checkpoints for one size.
+
+    Reads which (size, revision) results already exist on the volume via
+    a fresh container, then dispatches starmap only over the gaps. Useful
+    when multi-band pilot orchestration hits transient ConflictErrors —
+    a single-band drain has no cross-band coupling to lose.
+    """
+    from scaling_shapes.models import SIZES, all_revisions
+
+    target = next(s for s in SIZES if s.name == size)
+    fn = _dispatch(target.band)
+    missing = _missing_revisions.remote(size, all_revisions())
+    print(f"[finish_size] {size}: {len(missing)} ckpts missing of {len(all_revisions())}")
+    if not missing:
+        return
+    handle = fn.starmap([(target.hf_id, r) for r in missing], return_exceptions=True)
+    failures = 0
+    for result in handle:
+        if isinstance(result, Exception):
+            failures += 1
+    print(f"[finish_size] {size} drained ({failures} per-ckpt failures swallowed)")
+
+
+@app.function(
+    image=image,
+    volumes={RUNS_PATH: runs_volume},
+    timeout=5 * MINUTES,
+)
+def _missing_revisions(size: str, revisions: list[str]) -> list[str]:
+    """Return revisions that have no committed JSON on the runs volume."""
+    runs_volume.reload()
+    base = Path(RUNS_PATH) / "evals" / size
+    return [r for r in revisions if not (base / f"{r}.json").exists() or (base / f"{r}.json").stat().st_size == 0]

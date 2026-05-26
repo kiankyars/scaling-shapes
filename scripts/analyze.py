@@ -16,11 +16,20 @@ from pathlib import Path
 
 import numpy as np
 
-from scaling_shapes.cluster import cluster_tasks
 from scaling_shapes.fit import LogisticFit, fit_logistic
 from scaling_shapes.forecast import within_trajectory_forecast
+from scaling_shapes.similarity import task_shape_similarity
 from scaling_shapes.models import SIZES, revision_step
 from scaling_shapes.tasks import TASKS
+
+PILOT_TASK_NAMES = {t.name for t in TASKS}
+
+# 2.8B trajectories are broken — sanity check fails (every revision returns the
+# same value at step0 as at step143000, e.g. hellaswag.acc_norm = 0.6078 across
+# the full range, vs ~0.26 random for every other size). Root cause appears to
+# be HuggingFace's revision branches resolving to the same cached blob during
+# the original pilot. Excluded from the analysis until re-collected.
+BROKEN_SIZES: frozenset[str] = frozenset({"2.8b"})
 
 
 def _params(size_name: str) -> int:
@@ -63,6 +72,8 @@ def per_task_curves(evals: dict) -> dict[str, dict[str, list[tuple[float, float]
     """Returns {task_name: {size_name: [(log10_flops, accuracy), ...]}}."""
     out: dict[str, dict[str, list[tuple[float, float]]]] = defaultdict(lambda: defaultdict(list))
     for size_name, revs in evals.items():
+        if size_name in BROKEN_SIZES:
+            continue
         params = _params(size_name)
         for revision, row in revs.items():
             step = revision_step(revision)
@@ -70,6 +81,8 @@ def per_task_curves(evals: dict) -> dict[str, dict[str, list[tuple[float, float]
                 continue  # FLOPs = 0; skip the random-init point on log axis
             log_c = math.log10(_flops(params, step))
             for task_name, metrics in row["results"].items():
+                if task_name not in PILOT_TASK_NAMES:
+                    continue  # ignore MMLU rows surfacing from early smoke runs
                 v = _primary_value(task_name, metrics)
                 if v is None or not (0.0 <= v <= 1.0):
                     continue
@@ -120,24 +133,20 @@ def main():
         by_task[task_name] = LogisticFit(mu=mu, k=k, a_min=a_min, a_max=a_max,
                                           rmse=rmse, bic=bic, n_points=n)
 
-    # Cluster.
-    print(f"\nclustering {len(by_task)} per-task fits")
-    clustering = cluster_tasks(by_task)
-    print(f"  best k={clustering.n_clusters}, silhouette={clustering.silhouette:.3f}")
-
-    by_label: dict[int, list[str]] = defaultdict(list)
-    for name, lbl in zip(clustering.task_names, clustering.labels):
-        by_label[int(lbl)].append(name)
-    for lbl in sorted(by_label):
-        members = by_label[lbl]
-        mus = [by_task[m].mu for m in members]
-        ks = [by_task[m].k for m in members]
-        print(f"  cluster {lbl} (n={len(members)}, mu={np.mean(mus):.2f}, k={np.mean(ks):.2f}): "
-              f"{', '.join(sorted(members)[:6])}{', ...' if len(members) > 6 else ''}")
+    # Pairwise shape similarity over all 9 pilot tasks. We deliberately do
+    # NOT cluster these into a discrete taxonomy — the pilot doesn't have
+    # enough tasks to support cluster labels honestly. The distance matrix
+    # itself is the answer.
+    shape_sim = task_shape_similarity(
+        list(by_task.keys()), fits_by_task_size, curves
+    )
+    print(f"\nshape similarity (normalized-curve RMSE, median across sizes):")
+    print(f"  matrix shape: {shape_sim.distance.shape},  "
+          f"finite cells: {int(np.isfinite(shape_sim.distance).sum())}/{shape_sim.distance.size}")
 
     # Within-trajectory forecast on each (task, size) where we have enough points.
     print("\nwithin-trajectory forecast skill (fit on first 50%, predict tail):")
-    skill_by_task = defaultdict(list)
+    skill_by_task_size: dict[tuple[str, str], float] = {}
     for (task_name, size_name), _ in fits_by_task_size.items():
         points = sorted(curves[task_name][size_name], key=lambda p: p[0])
         if len(points) < 8:
@@ -146,13 +155,64 @@ def main():
         ys = np.array([p[1] for p in points])
         try:
             r = within_trajectory_forecast(xs, ys, train_fraction=0.5)
-            skill_by_task[task_name].append(r.skill)
+            skill_by_task_size[(task_name, size_name)] = float(r.skill)
         except Exception:
             pass
-    print(f'  {"task":>20} | {"median skill":>14} | {"n sizes":>8}')
+    skill_by_task: dict[str, list[float]] = defaultdict(list)
+    for (t, _), v in skill_by_task_size.items():
+        skill_by_task[t].append(v)
+
+    # Bootstrap 95% CIs on the median skill across sizes (percentile method,
+    # resampling the per-size skill values with replacement).
+    rng = np.random.default_rng(0)
+    n_boot = 2000
+    skill_ci: dict[str, tuple[float, float, float]] = {}
+    for task_name, vals in skill_by_task.items():
+        arr = np.asarray(vals, dtype=float)
+        meds = np.median(arr[rng.integers(0, arr.size, size=(n_boot, arr.size))], axis=1)
+        skill_ci[task_name] = (float(np.median(arr)),
+                                float(np.percentile(meds, 2.5)),
+                                float(np.percentile(meds, 97.5)))
+
+    print(f'  {"task":>20} | {"median":>8} | {"95% CI":>20} | {"n sizes":>8}')
     for task_name in sorted(skill_by_task, key=lambda n: -np.median(skill_by_task[n])):
-        vals = skill_by_task[task_name]
-        print(f"  {task_name:>20} | {np.median(vals):>+14.3f} | {len(vals):>8}")
+        med, lo, hi = skill_ci[task_name]
+        print(f"  {task_name:>20} | {med:>+8.3f} | [{lo:>+7.3f}, {hi:>+7.3f}] | "
+              f"{len(skill_by_task[task_name]):>8}")
+
+    # Write a single JSON artifact for downstream plotting / sharing.
+    out_path = Path("outputs/analysis.json")
+    artifact = {
+        "n_eval_rows": int(sum(len(r) for r in evals.values())),
+        "n_sizes": len(evals),
+        "fits_by_task_size": {
+            f"{t}|{s}": {
+                "mu": f.mu, "k": f.k, "a_min": f.a_min, "a_max": f.a_max,
+                "rmse": f.rmse, "bic": f.bic, "n_points": f.n_points,
+            }
+            for (t, s), f in fits_by_task_size.items()
+        },
+        "shape_similarity": {
+            "tasks": shape_sim.task_names,
+            "distance": shape_sim.distance.tolist(),
+            "n_sizes_per_pair": shape_sim.n_sizes_per_pair.tolist(),
+        },
+        "forecast_skill": {
+            t: {
+                "median": float(np.median(v)),
+                "values": [float(x) for x in v],
+                "n_sizes": len(v),
+                "ci_lo_95": skill_ci[t][1],
+                "ci_hi_95": skill_ci[t][2],
+            }
+            for t, v in skill_by_task.items()
+        },
+        "skill_by_task_size": {
+            f"{t}|{s}": v for (t, s), v in skill_by_task_size.items()
+        },
+    }
+    out_path.write_text(json.dumps(artifact, indent=2))
+    print(f"\nwrote {out_path}")
 
 
 if __name__ == "__main__":

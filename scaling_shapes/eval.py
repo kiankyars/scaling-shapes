@@ -14,6 +14,50 @@ from pathlib import Path
 from .tasks import TASKS, Task
 
 
+def _patch_safetensors_metadata_for_transformers_446() -> None:
+    """Some Pythia 2.8B revisions upload safetensors shards with a None
+    metadata block. transformers 4.46.x then raises either AttributeError
+    (None.get) or ValueError ("File metadata is not ['pt','tf',...] but
+    None"). Wrap safe_open inside transformers.modeling_utils so .metadata()
+    always returns a dict with format='pt' filled in.
+
+    Idempotent — re-import inside a hot worker is a no-op.
+    """
+    import transformers.modeling_utils as _mu
+
+    if getattr(_mu, "_pythia_metadata_patch_applied", False):
+        return
+
+    real_safe_open = _mu.safe_open
+
+    class _SafeOpenWrap:
+        def __init__(self, *args, **kwargs):
+            self._cm = real_safe_open(*args, **kwargs)
+            self._inner = None
+
+        def __enter__(self):
+            self._inner = self._cm.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return self._cm.__exit__(exc_type, exc, tb)
+
+        def metadata(self):
+            md = self._inner.metadata()
+            if md is None:
+                return {"format": "pt"}
+            if md.get("format") is None:
+                md = dict(md)
+                md["format"] = "pt"
+            return md
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    _mu.safe_open = _SafeOpenWrap
+    _mu._pythia_metadata_patch_applied = True
+
+
 def evaluate_checkpoint(
     *,
     hf_id: str,
@@ -35,6 +79,8 @@ def evaluate_checkpoint(
     """
     import lm_eval
     from lm_eval.models.huggingface import HFLM
+
+    _patch_safetensors_metadata_for_transformers_446()
 
     tasks = tasks or TASKS
     t0 = time.time()
