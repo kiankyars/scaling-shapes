@@ -271,10 +271,7 @@ def plot_shape_similarity(analysis: dict, out_path: Path):
     cbar.set_label("shape distance  (RMSE on shape-normalised fitted curves)")
 
     ax.set_title(
-        "Do scaling curves share the same shape across tasks?\n"
-        "Pairwise distance between shape-normalised logistic fits, median across "
-        "Pythia sizes.\nLow = similar emergence shape, high = dissimilar.  "
-        "Rows/columns ordered by average-linkage hierarchical clustering.",
+        "Pairwise distance between shape-normalised logistic fits, median across ",
         fontsize=10,
     )
     fig.tight_layout()
