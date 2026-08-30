@@ -140,7 +140,7 @@ def main():
     shape_sim = task_shape_similarity(
         list(by_task.keys()), fits_by_task_size, curves
     )
-    print(f"\nshape similarity (normalized-curve RMSE, median across sizes):")
+    print(f"\nshape similarity (normalized-curve RMSE, mean across sizes):")
     print(f"  matrix shape: {shape_sim.distance.shape},  "
           f"finite cells: {int(np.isfinite(shape_sim.distance).sum())}/{shape_sim.distance.size}")
 

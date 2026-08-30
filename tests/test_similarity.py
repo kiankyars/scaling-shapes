@@ -37,3 +37,25 @@ def test_task_matrix_symmetric():
     sim = task_shape_similarity(["a", "b"], fits, curves, max_fit_rmse=1.0)
     assert sim.distance[0, 1] == sim.distance[1, 0]
     assert sim.distance[0, 0] == 0.0
+
+
+def test_task_matrix_uses_mean_across_sizes():
+    xs = np.linspace(17.0, 22.0, 30)
+    fits = {}
+    curves = {"a": {}, "b": {}}
+    per_size_distances = []
+
+    for size, b_slope in (("14m", 2.0), ("31m", 2.5), ("70m", 8.0)):
+        fa = _fit(20.0, 2.0, 0.2, 0.7)
+        fb = _fit(20.0, b_slope, 0.2, 0.7)
+        fits[("a", size)] = fa
+        fits[("b", size)] = fb
+        curves["a"][size] = list(zip(xs, np.linspace(0.2, 0.7, xs.size)))
+        curves["b"][size] = list(zip(xs, np.linspace(0.2, 0.7, xs.size)))
+        per_size_distances.append(shape_distance_fits(fa, fb, xs.min(), xs.max()))
+
+    sim = task_shape_similarity(["a", "b"], fits, curves, max_fit_rmse=1.0)
+    expected_mean = float(np.mean(per_size_distances))
+
+    assert not np.isclose(expected_mean, np.median(per_size_distances))
+    assert np.isclose(sim.distance[0, 1], expected_mean)

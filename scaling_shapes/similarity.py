@@ -54,7 +54,7 @@ def shape_distance_at_size(
 @dataclass(frozen=True)
 class TaskSimilarity:
     task_names: list[str]
-    distance: np.ndarray  # (n, n), median across sizes of normalized-curve RMSE
+    distance: np.ndarray  # (n, n), mean across sizes of normalized-curve RMSE
     n_sizes_per_pair: np.ndarray  # how many sizes contributed to each cell
 
     def within_between_ratio(self, labels: np.ndarray) -> tuple[float, float, float]:

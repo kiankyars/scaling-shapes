@@ -220,7 +220,7 @@ def plot_curves(curves: dict, analysis: dict, out_path: Path,
 def plot_shape_similarity(analysis: dict, out_path: Path):
     """Task×task heatmap of pairwise shape distance.
 
-    Distance = median across model sizes of the RMSE between two tasks'
+    Distance = mean across model sizes of the RMSE between two tasks'
     shape-normalised fitted curves on their overlapping log-compute window.
     Low distance ⇒ similar emergence shape; high distance ⇒ dissimilar.
     Rows and columns are reordered by average-linkage hierarchical clustering
@@ -271,7 +271,7 @@ def plot_shape_similarity(analysis: dict, out_path: Path):
     cbar.set_label("shape distance  (RMSE on shape-normalised fitted curves)")
 
     ax.set_title(
-        "Pairwise distance between shape-normalised logistic fits, median across ",
+        "Pairwise distance between shape-normalised logistic fits, mean across Pythia sizes",
         fontsize=10,
     )
     fig.tight_layout()
